@@ -2,8 +2,13 @@ use nalgebra_glm::{Vec3, dot};
 use crate::fragment::Fragment;
 use crate::vertex::Vertex;
 use crate::color::Color;
+use crate::planets::PlanetType;
 
 pub fn triangle(v1: &Vertex, v2: &Vertex, v3: &Vertex) -> Vec<Fragment> {
+    triangle_with_shader(v1, v2, v3, None, 0.0)
+}
+
+pub fn triangle_with_shader(v1: &Vertex, v2: &Vertex, v3: &Vertex, shader_type: Option<PlanetType>, time: f32) -> Vec<Fragment> {
     let mut fragments = Vec::new();
     let (a, b, c) = (v1.transformed_position, v2.transformed_position, v3.transformed_position);
 
@@ -21,23 +26,33 @@ pub fn triangle(v1: &Vertex, v2: &Vertex, v3: &Vertex) -> Vec<Fragment> {
             let (w1, w2, w3) = barycentric_coordinates(&point, &a, &b, &c, triangle_area);
 
             // Check if the point is inside the triangle
-            if w1 >= 0.0 && w1 <= 1.0 && 
-               w2 >= 0.0 && w2 <= 1.0 &&
-               w3 >= 0.0 && w3 <= 1.0 {
-                // Use the first vertex's normal for simplicity
-                let normal = v1.transformed_normal.normalize();
+      if w1 >= 0.0 && w1 <= 1.0 && 
+         w2 >= 0.0 && w2 <= 1.0 &&
+         w3 >= 0.0 && w3 <= 1.0 {
+        // Interpolate attributes
+        let normal = (v1.transformed_normal * w1 + v2.transformed_normal * w2 + v3.transformed_normal * w3).normalize();
+        let uv = v1.tex_coords * w1 + v2.tex_coords * w2 + v3.tex_coords * w3;
+        let world_pos = v1.position * w1 + v2.position * w2 + v3.position * w3;
 
-                // Calculate lighting intensity
-                let intensity = dot(&normal, &light_dir).max(0.0);
+        let lit_color = if let Some(planet_type) = &shader_type {
+          // Use planetary shader
+          match planet_type {
+            PlanetType::Star => crate::planets::star_shader(world_pos, normal, uv, time),
+            PlanetType::RockyPlanet => crate::planets::rocky_planet_shader(world_pos, normal, uv, time),
+            PlanetType::GasGiant => crate::planets::gas_giant_shader(world_pos, normal, uv, time),
+            PlanetType::IcePlanet => crate::planets::ice_planet_shader(world_pos, normal, uv, time),
+            PlanetType::VolcanicPlanet => crate::planets::volcanic_planet_shader(world_pos, normal, uv, time),
+            PlanetType::RingedPlanet => crate::planets::ringed_planet_shader(world_pos, normal, uv, time),
+          }
+        } else {
+          // Default lighting for spaceship
+          let light_dir = Vec3::new(0.0, 0.0, -1.0);
+          let intensity = dot(&normal, &light_dir).max(0.0);
+          let base_color = Color::new(100, 150, 255);
+          base_color * intensity.max(0.3)
+        };
 
-                // Create a color and apply lighting
-                let base_color = Color::new(100, 150, 255); // Blue-ish color for spaceship
-                let lit_color = base_color * intensity.max(0.3); // Ensure minimum visibility
-
-                // Use depth from first vertex for simplicity
-                let depth = a.z;
-
-                fragments.push(Fragment::new(x as f32, y as f32, lit_color, depth));
+        let depth = a.z;                fragments.push(Fragment::new(x as f32, y as f32, lit_color, depth));
             }
         }
     }
